@@ -1,0 +1,62 @@
+HỆ THỐNG QUẢN LÝ NHÀ HÀNG EPSTEIN'S
+
+
+
+Bước 1: Mở Terminal (CMD hoặc PowerShell), di chuyển vào thư mục dự án:
+
+    cd "cd /d C:\Users\Admin\OneDrive\Desktop\AppRestaurantManagement"
+
+Bước 2: Tạo Virtual Environment (đã tạo sẵn thư mục venv):
+
+    py -m venv venv
+
+Bước 3: Kích hoạt Virtual Environment:
+
+    [Windows CMD]
+    venv\Scripts\activate.bat
+
+
+    Khi kích hoạt thành công, đầu dòng lệnh sẽ hiện (venv).
+
+Bước 4: Cài đặt thư viện cần thiết:
+
+    pip install pyodbc redis PyQt6
+
+Bước 5: Tắt Virtual Environment (khi không cần dùng nữa):
+
+    deactivate
+
+
+Mở file app_config.py và chỉnh sửa:
+
+- DRIVER:  '{ODBC Driver 17 for SQL Server}' (hoặc bản mới hơn)
+- SERVER:  Tên máy tính\SQLEXPRESS (ví dụ: localhost\SQLEXPRESS)
+- DATABASE: 'RestaurantDB'
+- Nếu dùng Windows Auth: giữ TRUSTED_CONNECTION = 'yes'
+- Nếu dùng SQL Auth: đặt TRUSTED_CONNECTION = 'no', điền UID và PWD
+
+
+VI. CHẠY ỨNG DỤNG
+------------------
+1. Đảm bảo SQL Server đang chạy.
+2. (Tùy chọn) Đảm bảo Redis đang chạy.
+3. Kích hoạt venv:
+
+    venv\Scripts\activate.bat      (CMD)
+
+
+4. Chạy ứng dụng:
+
+    python main_gui.py
+
+
+VII. TÀI KHOẢN ĐĂNG NHẬP MẪU
+------------------------------
+Username     | Mật khẩu | Vai trò
+-------------|----------|----------
+admin        | 123456   | Quản lý (truy cập tất cả)
+letan01      | 123456   | Lễ tân
+waiter01     | 123456   | Phục vụ
+chef01       | 123456   | Bếp
+
+
