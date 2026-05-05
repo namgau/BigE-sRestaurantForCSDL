@@ -324,3 +324,129 @@ GO
 
 PRINT N'=== Database RestaurantDB đã được tạo thành công! ===';
 GO
+
+-- ============================================================
+-- 12. CÁC BẢNG THỐNG KÊ (STATISTICS) - CẬP NHẬT THEO ERD
+-- ============================================================
+
+-- Thống kê nhà hàng theo ngày
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='RestaurantStat' AND xtype='U')
+CREATE TABLE RestaurantStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    restaurant_id   INT             NOT NULL,
+    day             DATE            NOT NULL,
+    revenue         DECIMAL(14,2)   DEFAULT 0,
+    fill_rate       FLOAT           DEFAULT 0, -- Tỷ lệ lấp đầy bàn
+    total_bills     INT             DEFAULT 0,
+    CONSTRAINT FK_RestStat_Rest FOREIGN KEY (restaurant_id) REFERENCES Restaurant(restaurant_id)
+);
+GO
+
+-- Thống kê theo bàn
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='TableStat' AND xtype='U')
+CREATE TABLE TableStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    table_id        INT             NOT NULL,
+    day             DATE            NOT NULL,
+    income          DECIMAL(14,2)   DEFAULT 0,
+    total_guests    INT             DEFAULT 0,
+    CONSTRAINT FK_TblStat_Tbl FOREIGN KEY (table_id) REFERENCES Tables(table_id)
+);
+GO
+
+-- Thống kê theo khách hàng
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='ClientStat' AND xtype='U')
+CREATE TABLE ClientStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    client_id       INT             NOT NULL,
+    day             DATE            NOT NULL,
+    payment         DECIMAL(14,2)   DEFAULT 0,
+    CONSTRAINT FK_CliStat_Cli FOREIGN KEY (client_id) REFERENCES Client(client_id)
+);
+GO
+
+-- Thống kê món ăn bán chạy
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='DishStat' AND xtype='U')
+CREATE TABLE DishStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    dish_id         INT             NOT NULL,
+    day             DATE            NOT NULL,
+    total_sold      INT             DEFAULT 0,
+    revenue         DECIMAL(14,2)   DEFAULT 0,
+    CONSTRAINT FK_DishStat_Dish FOREIGN KEY (dish_id) REFERENCES Dish(dish_id)
+);
+GO
+
+-- Thống kê chi tiết thu nhập (IncomeStat)
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='IncomeStat' AND xtype='U')
+CREATE TABLE IncomeStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    bill_id         INT             NOT NULL,
+    period          VARCHAR(20)     NULL, -- Sáng/Chiều/Tối hoặc Giờ
+    revenue         DECIMAL(14,2)   DEFAULT 0,
+    CONSTRAINT FK_IncStat_Bill FOREIGN KEY (bill_id) REFERENCES Bill(bill_id)
+);
+GO
+
+
+USE RestaurantDB;
+GO
+
+-- Thống kê nhà hàng theo ngày
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='RestaurantStat' AND xtype='U')
+CREATE TABLE RestaurantStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    restaurant_id   INT             NOT NULL,
+    day             DATE            NOT NULL,
+    revenue         DECIMAL(14,2)   DEFAULT 0,
+    fill_rate       FLOAT           DEFAULT 0,
+    total_bills     INT             DEFAULT 0,
+    CONSTRAINT FK_RestStat_Rest FOREIGN KEY (restaurant_id) REFERENCES Restaurant(restaurant_id)
+);
+GO
+
+-- Thống kê theo bàn
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='TableStat' AND xtype='U')
+CREATE TABLE TableStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    table_id        INT             NOT NULL,
+    day             DATE            NOT NULL,
+    income          DECIMAL(14,2)   DEFAULT 0,
+    total_guests    INT             DEFAULT 0,
+    CONSTRAINT FK_TblStat_Tbl FOREIGN KEY (table_id) REFERENCES Tables(table_id)
+);
+GO
+
+-- Thống kê theo khách hàng
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='ClientStat' AND xtype='U')
+CREATE TABLE ClientStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    client_id       INT             NOT NULL,
+    day             DATE            NOT NULL,
+    payment         DECIMAL(14,2)   DEFAULT 0,
+    CONSTRAINT FK_CliStat_Cli FOREIGN KEY (client_id) REFERENCES Client(client_id)
+);
+GO
+
+-- Thống kê món ăn bán chạy
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='DishStat' AND xtype='U')
+CREATE TABLE DishStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    dish_id         INT             NOT NULL,
+    day             DATE            NOT NULL,
+    total_sold      INT             DEFAULT 0,
+    revenue         DECIMAL(14,2)   DEFAULT 0,
+    CONSTRAINT FK_DishStat_Dish FOREIGN KEY (dish_id) REFERENCES Dish(dish_id)
+);
+GO
+
+-- Thống kê chi tiết thu nhập
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='IncomeStat' AND xtype='U')
+CREATE TABLE IncomeStat (
+    stat_id         INT IDENTITY(1,1) PRIMARY KEY,
+    bill_id         INT             NOT NULL,
+    period          VARCHAR(20)     NULL,
+    revenue         DECIMAL(14,2)   DEFAULT 0,
+    CONSTRAINT FK_IncStat_Bill FOREIGN KEY (bill_id) REFERENCES Bill(bill_id)
+);
+GO

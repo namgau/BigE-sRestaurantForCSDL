@@ -175,3 +175,35 @@ class RedisCache:
             return
         key = REDIS_KEYS['KITCHEN_QUEUE'].format(rid=restaurant_id)
         self.client.delete(key)
+
+    # ==========================================================
+    # CACHE THỐNG KÊ (GENERAL STATS)
+    # ==========================================================
+    def set_report_stats(self, restaurant_id, stat_type, params, data):
+        """
+        Cache kết quả báo cáo thống kê bất kỳ.
+        stat_type: string (e.g., 'table_revenue', 'best_sellers')
+        params: dict (chứa ngày từ/đến để tạo key duy nhất)
+        """
+        if not self.enabled: return
+        # Tạo key duy nhất dựa trên tham số
+        param_str = "-".join([f"{k}:{v}" for k, v in sorted(params.items())])
+        key = f"restaurant:{restaurant_id}:report:{stat_type}:{param_str}"
+        ttl = 600 # 10 phút
+        self.client.setex(key, ttl, json.dumps(data, ensure_ascii=False))
+
+    def get_report_stats(self, restaurant_id, stat_type, params):
+        """Lấy báo cáo từ cache."""
+        if not self.enabled: return None
+        param_str = "-".join([f"{k}:{v}" for k, v in sorted(params.items())])
+        key = f"restaurant:{restaurant_id}:report:{stat_type}:{param_str}"
+        data = self.client.get(key)
+        return json.loads(data) if data else None
+
+    def invalidate_reports(self, restaurant_id):
+        """Xóa tất cả cache báo cáo của nhà hàng khi có thay đổi dữ liệu (thanh toán)."""
+        if not self.enabled: return
+        pattern = f"restaurant:{restaurant_id}:report:*"
+        keys = self.client.keys(pattern)
+        if keys:
+            self.client.delete(*keys)

@@ -483,15 +483,12 @@ class ReportWidget(QWidget):
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        
-        # Tiêu đề nếu cần thiết (ẩn nếu nằm trong tab)
         title = QLabel("BÁO CÁO THỐNG KÊ")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         title.setStyleSheet("color:#000000; padding: 8px 0;")
         layout.addWidget(title)
 
         row = QHBoxLayout()
-
         row.addWidget(QLabel("Loại báo cáo:", styleSheet="color:#000000;font:13px 'Segoe UI';"))
         self.cmb_stat_type = QComboBox()
         self.cmb_stat_type.addItems([
@@ -531,12 +528,19 @@ class ReportWidget(QWidget):
         layout.addWidget(self.lbl_rev_total)
 
     def load_report(self):
-        stat_type = self.cmb_stat_type.currentIndex()
+        from dataclasses import asdict
+        from models import TableStat, DishStat, ClientStat, HourlyStat
+        
+        stat_type_idx = self.cmb_stat_type.currentIndex()
+        stat_types = ["table_revenue", "best_sellers", "client_spending", "hourly_stats"]
+        stat_type = stat_types[stat_type_idx]
+        
         qd_from = self.date_from.date()
         qd_to = self.date_to.date()
         d_from = date(qd_from.year(), qd_from.month(), qd_from.day())
         d_to = date(qd_to.year(), qd_to.month(), qd_to.day())
-
+        
+        params = {"from": str(d_from), "to": str(d_to)}
         if d_from > d_to:
             QMessageBox.warning(self, "Lỗi", "Khoảng thời gian không hợp lệ!")
             return
@@ -544,26 +548,39 @@ class ReportWidget(QWidget):
         self.tbl_revenue.clear()
         self.tbl_revenue.setRowCount(0)
 
-        if stat_type == 0:
+        # Thử lấy từ cache
+        cached_data = self.cache.get_report_stats(self.rid, stat_type, params)
+        stats = []
+        
+        if cached_data:
+            if stat_type_idx == 0: stats = [TableStat(**d) for d in cached_data]
+            elif stat_type_idx == 1: stats = [DishStat(**d) for d in cached_data]
+            elif stat_type_idx == 2: stats = [ClientStat(**d) for d in cached_data]
+            elif stat_type_idx == 3: stats = [HourlyStat(**d) for d in cached_data]
+        else:
+            if stat_type_idx == 0: stats = self.dao.get_table_revenue_stats(self.rid, d_from, d_to)
+            elif stat_type_idx == 1: stats = self.dao.get_best_sellers_stats(self.rid, d_from, d_to)
+            elif stat_type_idx == 2: stats = self.dao.get_client_spending_stats(d_from, d_to)
+            elif stat_type_idx == 3: stats = self.dao.get_hourly_customer_stats(self.rid, d_from)
+            if stats:
+                self.cache.set_report_stats(self.rid, stat_type, params, [asdict(s) for s in stats])
+
+        grand_total = 0
+        if stat_type_idx == 0:
             self.tbl_revenue.setColumnCount(4)
             self.tbl_revenue.setHorizontalHeaderLabels(["Bàn", "Khu vực", "Tổng lượt khách", "Tổng doanh thu"])
-            stats = self.dao.get_table_revenue_stats(self.rid, d_from, d_to)
             self.tbl_revenue.setRowCount(len(stats))
-            grand_total = 0
             for i, s in enumerate(stats):
-                self.tbl_revenue.setItem(i, 0, self._read_only_item(s.table_number))
+                self.tbl_revenue.setItem(i, 0, self._read_only_item(str(s.table_number)))
                 self.tbl_revenue.setItem(i, 1, self._read_only_item(s.area))
                 self.tbl_revenue.setItem(i, 2, self._read_only_item(str(s.total_guests)))
                 self.tbl_revenue.setItem(i, 3, self._read_only_item(f"{s.total_revenue:,.0f}đ"))
                 grand_total += s.total_revenue
             self.lbl_rev_total.setText(f"Tổng doanh thu: {grand_total:,.0f} đ")
-        
-        elif stat_type == 1:
+        elif stat_type_idx == 1:
             self.tbl_revenue.setColumnCount(4)
             self.tbl_revenue.setHorizontalHeaderLabels(["Tên món", "Danh mục", "Số lượng bán", "Doanh thu đóng góp"])
-            stats = self.dao.get_best_sellers_stats(self.rid, d_from, d_to)
             self.tbl_revenue.setRowCount(len(stats))
-            grand_total = 0
             for i, s in enumerate(stats):
                 self.tbl_revenue.setItem(i, 0, self._read_only_item(s.dish_name))
                 self.tbl_revenue.setItem(i, 1, self._read_only_item(s.category_name))
@@ -571,26 +588,20 @@ class ReportWidget(QWidget):
                 self.tbl_revenue.setItem(i, 3, self._read_only_item(f"{s.revenue_contribution:,.0f}đ"))
                 grand_total += s.revenue_contribution
             self.lbl_rev_total.setText(f"Tổng doanh thu từ món: {grand_total:,.0f} đ")
-
-        elif stat_type == 2:
+        elif stat_type_idx == 2:
             self.tbl_revenue.setColumnCount(3)
             self.tbl_revenue.setHorizontalHeaderLabels(["Khách hàng", "SĐT", "Tổng chi tiêu"])
-            stats = self.dao.get_client_spending_stats(d_from, d_to)
             self.tbl_revenue.setRowCount(len(stats))
-            grand_total = 0
             for i, s in enumerate(stats):
                 self.tbl_revenue.setItem(i, 0, self._read_only_item(s.client_name))
                 self.tbl_revenue.setItem(i, 1, self._read_only_item(s.phone))
                 self.tbl_revenue.setItem(i, 2, self._read_only_item(f"{s.total_spent:,.0f}đ"))
                 grand_total += s.total_spent
             self.lbl_rev_total.setText(f"Tổng doanh thu khách hàng: {grand_total:,.0f} đ")
-
-        elif stat_type == 3:
+        elif stat_type_idx == 3:
             self.tbl_revenue.setColumnCount(4)
             self.tbl_revenue.setHorizontalHeaderLabels(["Khung giờ", "Lượt khách", "Số bàn đã dùng", "Doanh thu"])
-            stats = self.dao.get_hourly_customer_stats(self.rid, d_from)
             self.tbl_revenue.setRowCount(len(stats))
-            grand_total = 0
             for i, s in enumerate(stats):
                 self.tbl_revenue.setItem(i, 0, self._read_only_item(s.time_frame))
                 self.tbl_revenue.setItem(i, 1, self._read_only_item(str(s.guest_count)))

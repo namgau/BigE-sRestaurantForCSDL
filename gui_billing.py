@@ -215,6 +215,7 @@ class BillingWidget(QWidget):
             self.cache.set_table_status(self.rid, table_id, 'available')
             self.cache.invalidate_tables(self.rid)
             self.cache.invalidate_revenue(self.rid, str(date.today()))
+            self.cache.invalidate_reports(self.rid)
             QMessageBox.information(self, "Thành công", "Thanh toán thành công!")
             self.current_bill = None
             self.tbl_items.setRowCount(0)

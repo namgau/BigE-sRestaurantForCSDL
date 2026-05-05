@@ -526,6 +526,66 @@ class DatabaseDAO:
                 if remaining == 0:
                     conn.execute("UPDATE Tables SET status='available' WHERE table_id=?", row.table_id)
             conn.commit()
+        # Cập nhật thống kê vào các bảng Stat (ERD Requirement)
+        self.sync_statistics(bill_id)
+
+    def sync_statistics(self, bill_id):
+        """Đồng bộ dữ liệu từ Bill vừa thanh toán vào các bảng Thống kê (Stat)."""
+        bill = self.get_bill_by_id(bill_id)
+        if not bill or bill.status != 'paid': return
+        
+        pay_date = bill.paid_at.date() if bill.paid_at else date.today()
+        
+        with self._get_connection() as conn:
+            # 1. Cập nhật RestaurantStat
+            row_r = conn.execute("SELECT restaurant_id FROM Tables WHERE table_id=?", bill.table_id).fetchone()
+            if row_r:
+                rid = row_r.restaurant_id
+                exist = conn.execute("SELECT stat_id FROM RestaurantStat WHERE restaurant_id=? AND day=?", rid, pay_date).fetchone()
+                if exist:
+                    conn.execute("""UPDATE RestaurantStat SET revenue = revenue + ?, total_bills = total_bills + 1 
+                                 WHERE stat_id=?""", bill.total_amount, exist.stat_id)
+                else:
+                    conn.execute("""INSERT INTO RestaurantStat (restaurant_id, day, revenue, total_bills) 
+                                 VALUES (?, ?, ?, 1)""", rid, pay_date, bill.total_amount)
+
+            # 2. Cập nhật TableStat
+            exist_t = conn.execute("SELECT stat_id FROM TableStat WHERE table_id=? AND day=?", bill.table_id, pay_date).fetchone()
+            if exist_t:
+                conn.execute("UPDATE TableStat SET income = income + ?, total_guests = total_guests + 1 WHERE stat_id=?", 
+                             bill.total_amount, exist_t.stat_id)
+            else:
+                conn.execute("INSERT INTO TableStat (table_id, day, income, total_guests) VALUES (?, ?, ?, 1)", 
+                             bill.table_id, pay_date, bill.total_amount)
+
+            # 3. Cập nhật ClientStat
+            if bill.client_id:
+                exist_c = conn.execute("SELECT stat_id FROM ClientStat WHERE client_id=? AND day=?", bill.client_id, pay_date).fetchone()
+                if exist_c:
+                    conn.execute("UPDATE ClientStat SET payment = payment + ? WHERE stat_id=?", bill.total_amount, exist_c.stat_id)
+                else:
+                    conn.execute("INSERT INTO ClientStat (client_id, day, payment) VALUES (?, ?, ?)", bill.client_id, pay_date, bill.total_amount)
+
+            # 4. Cập nhật DishStat
+            sql_dishes = """SELECT od.dish_id, SUM(od.quantity) as qty, SUM(od.quantity * od.unit_price) as rev
+                            FROM OrderedDish od JOIN BillOrder bo ON od.order_id = bo.order_id
+                            WHERE bo.bill_id=? GROUP BY od.dish_id"""
+            dishes = conn.execute(sql_dishes, bill_id).fetchall()
+            for d in dishes:
+                exist_d = conn.execute("SELECT stat_id FROM DishStat WHERE dish_id=? AND day=?", d.dish_id, pay_date).fetchone()
+                if exist_d:
+                    conn.execute("UPDATE DishStat SET total_sold = total_sold + ?, revenue = revenue + ? WHERE stat_id=?", 
+                                 d.qty, d.rev, exist_d.stat_id)
+                else:
+                    conn.execute("INSERT INTO DishStat (dish_id, day, total_sold, revenue) VALUES (?, ?, ?, ?)", 
+                                 d.dish_id, pay_date, d.qty, d.rev)
+
+            # 5. Cập nhật IncomeStat
+            hr = bill.paid_at.hour if bill.paid_at else 0
+            period = "06:00 - 10:00" if 6 <= hr < 10 else "10:00 - 14:00" if 10 <= hr < 14 else "14:00 - 18:00" if 14 <= hr < 18 else "18:00 - 22:00" if 18 <= hr < 22 else "22:00 - 06:00"
+            conn.execute("INSERT INTO IncomeStat (bill_id, period, revenue) VALUES (?, ?, ?)", bill_id, period, bill.total_amount)
+            
+            conn.commit()
 
     def get_bill_by_id(self, bill_id):
         sql = """SELECT b.*, t.table_number, u.full_name as cashier_name
@@ -587,9 +647,9 @@ class DatabaseDAO:
     from models import TableStat, DishStat, ClientStat, HourlyStat
 
     def get_table_revenue_stats(self, restaurant_id, start_date, end_date):
-        sql = """SELECT t.table_number, t.area, COUNT(b.bill_id) as total_guests, ISNULL(SUM(b.total_amount), 0) as total_revenue
+        sql = """SELECT t.table_number, t.area, SUM(ts.total_guests) as total_guests, SUM(ts.income) as total_revenue
                  FROM Tables t
-                 LEFT JOIN Bill b ON t.table_id = b.table_id AND b.status = 'paid' AND CAST(b.paid_at AS DATE) BETWEEN ? AND ?
+                 LEFT JOIN TableStat ts ON t.table_id = ts.table_id AND ts.day BETWEEN ? AND ?
                  WHERE t.restaurant_id = ?
                  GROUP BY t.table_id, t.table_number, t.area
                  ORDER BY t.table_number"""
@@ -597,66 +657,50 @@ class DatabaseDAO:
             from models import TableStat
             rows = conn.execute(sql, start_date, end_date, restaurant_id).fetchall()
             return [TableStat(table_number=str(r.table_number), area=r.area or "Tầng 1", 
-                              total_guests=r.total_guests, total_revenue=float(r.total_revenue)) for r in rows]
+                              total_guests=r.total_guests or 0, total_revenue=float(r.total_revenue or 0)) for r in rows]
 
     def get_best_sellers_stats(self, restaurant_id, start_date, end_date):
         sql = """SELECT d.name as dish_name, c.name as category_name, 
-                        SUM(od.quantity) as quantity_sold, 
-                        SUM(od.quantity * od.unit_price) as revenue_contribution
-                 FROM OrderedDish od
-                 JOIN Orders o ON od.order_id = o.order_id
-                 JOIN Tables t ON o.table_id = t.table_id
-                 JOIN Dish d ON od.dish_id = d.dish_id
+                        SUM(ds.total_sold) as quantity_sold, 
+                        SUM(ds.revenue) as revenue_contribution
+                 FROM DishStat ds
+                 JOIN Dish d ON ds.dish_id = d.dish_id
                  JOIN Category c ON d.category_id = c.category_id
-                 WHERE t.restaurant_id = ? AND o.status = 'completed' AND CAST(o.order_time AS DATE) BETWEEN ? AND ?
+                 WHERE c.restaurant_id = ? AND ds.day BETWEEN ? AND ?
                  GROUP BY d.dish_id, d.name, c.name
                  ORDER BY quantity_sold DESC"""
         with self._get_connection() as conn:
             from models import DishStat
             rows = conn.execute(sql, restaurant_id, start_date, end_date).fetchall()
             return [DishStat(dish_name=r.dish_name, category_name=r.category_name, 
-                             quantity_sold=r.quantity_sold, revenue_contribution=float(r.revenue_contribution)) for r in rows]
+                             quantity_sold=r.quantity_sold or 0, revenue_contribution=float(r.revenue_contribution or 0)) for r in rows]
 
     def get_client_spending_stats(self, start_date, end_date):
-        sql = """SELECT c.full_name as client_name, c.phone, SUM(b.total_amount) as total_spent
+        sql = """SELECT c.full_name as client_name, c.phone, SUM(cs.payment) as total_spent
                  FROM Client c
-                 JOIN Bill b ON c.client_id = b.client_id
-                 WHERE b.status = 'paid' AND CAST(b.paid_at AS DATE) BETWEEN ? AND ?
+                 JOIN ClientStat cs ON c.client_id = cs.client_id
+                 WHERE cs.day BETWEEN ? AND ?
                  GROUP BY c.client_id, c.full_name, c.phone
                  ORDER BY total_spent DESC"""
         with self._get_connection() as conn:
             from models import ClientStat
             rows = conn.execute(sql, start_date, end_date).fetchall()
-            return [ClientStat(client_name=r.client_name, phone=r.phone or "", total_spent=float(r.total_spent)) for r in rows]
+            return [ClientStat(client_name=r.client_name, phone=r.phone or "", total_spent=float(r.total_spent or 0)) for r in rows]
 
     def get_hourly_customer_stats(self, restaurant_id, target_date):
         sql = """SELECT 
-                    CASE 
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 6 AND 10 THEN '06:00 - 10:00'
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 10 AND 14 THEN '10:00 - 14:00'
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 14 AND 18 THEN '14:00 - 18:00'
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 18 AND 22 THEN '18:00 - 22:00'
-                        ELSE '22:00 - 06:00'
-                    END as time_frame,
-                    COUNT(DISTINCT o.order_id) as guest_count,
-                    COUNT(DISTINCT o.table_id) as table_count,
-                    ISNULL(SUM(b.total_amount), 0) as revenue
-                 FROM Orders o
-                 JOIN Tables t ON o.table_id = t.table_id
-                 LEFT JOIN BillOrder bo ON o.order_id = bo.order_id
-                 LEFT JOIN Bill b ON bo.bill_id = b.bill_id AND b.status = 'paid'
-                 WHERE t.restaurant_id = ? AND o.status = 'completed' AND CAST(o.order_time AS DATE) = ?
-                 GROUP BY 
-                    CASE 
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 6 AND 10 THEN '06:00 - 10:00'
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 10 AND 14 THEN '10:00 - 14:00'
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 14 AND 18 THEN '14:00 - 18:00'
-                        WHEN DATEPART(hour, o.order_time) BETWEEN 18 AND 22 THEN '18:00 - 22:00'
-                        ELSE '22:00 - 06:00'
-                    END
+                    ins.period as time_frame,
+                    COUNT(ins.stat_id) as guest_count,
+                    COUNT(DISTINCT b.table_id) as table_count,
+                    SUM(ins.revenue) as revenue
+                 FROM IncomeStat ins
+                 JOIN Bill b ON ins.bill_id = b.bill_id
+                 JOIN Tables t ON b.table_id = t.table_id
+                 WHERE t.restaurant_id = ? AND CAST(b.paid_at AS DATE) = ?
+                 GROUP BY ins.period
                  ORDER BY time_frame"""
         with self._get_connection() as conn:
             from models import HourlyStat
             rows = conn.execute(sql, restaurant_id, target_date).fetchall()
-            return [HourlyStat(time_frame=r.time_frame, guest_count=r.guest_count, 
-                               table_count=r.table_count, revenue=float(r.revenue)) for r in rows]
+            return [HourlyStat(time_frame=r.time_frame, guest_count=r.guest_count or 0, 
+                               table_count=r.table_count or 0, revenue=float(r.revenue or 0)) for r in rows]
