@@ -29,36 +29,36 @@ class DatabaseDAO:
         with self._get_connection() as conn:
             row = conn.execute(sql, username, pwd_hash).fetchone()
             if row:
-                return User(user_id=row.user_id, restaurant_id=row.restaurant_id,
+                return User(user_id=row.user_id,
                             username=row.username, password_hash=row.password_hash,
-                            full_name=row.full_name, role=row.role,
+                            full_name=row.full_name, position=row.position,
                             phone=row.phone, is_active=row.is_active)
         return None
 
     # ==========================================================
     # USERS - Quản lý nhân sự
     # ==========================================================
-    def get_all_users(self, restaurant_id):
-        sql = "SELECT * FROM Users WHERE restaurant_id=? ORDER BY user_id"
+    def get_all_users(self):
+        sql = "SELECT * FROM Users ORDER BY user_id"
         with self._get_connection() as conn:
-            rows = conn.execute(sql, restaurant_id).fetchall()
-            return [User(user_id=r.user_id, restaurant_id=r.restaurant_id,
+            rows = conn.execute(sql).fetchall()
+            return [User(user_id=r.user_id,
                          username=r.username, full_name=r.full_name,
-                         role=r.role, phone=r.phone, is_active=r.is_active) for r in rows]
+                         position=r.position, phone=r.phone, is_active=r.is_active) for r in rows]
 
     def add_user(self, user: User):
         pwd_hash = hashlib.md5('123456'.encode()).hexdigest()
-        sql = """INSERT INTO Users(restaurant_id,username,password_hash,full_name,role,phone)
-                 VALUES(?,?,?,?,?,?)"""
+        sql = """INSERT INTO Users(username,password_hash,full_name,position,phone)
+                 VALUES(?,?,?,?,?)"""
         with self._get_connection() as conn:
-            conn.execute(sql, user.restaurant_id, user.username, pwd_hash,
-                         user.full_name, user.role, user.phone)
+            conn.execute(sql, user.username, pwd_hash,
+                         user.full_name, user.position, user.phone)
             conn.commit()
 
     def update_user(self, user: User):
-        sql = "UPDATE Users SET full_name=?,role=?,phone=?,is_active=? WHERE user_id=?"
+        sql = "UPDATE Users SET full_name=?,position=?,phone=?,is_active=? WHERE user_id=?"
         with self._get_connection() as conn:
-            conn.execute(sql, user.full_name, user.role, user.phone,
+            conn.execute(sql, user.full_name, user.position, user.phone,
                          user.is_active, user.user_id)
             conn.commit()
 
@@ -236,8 +236,9 @@ class DatabaseDAO:
             conn.commit()
 
     def get_bookings_by_date(self, restaurant_id, target_date):
-        sql = """SELECT b.*, t.table_number, t.area FROM Booking b
+        sql = """SELECT b.*, t.table_number, t.area, u.full_name as user_name FROM Booking b
                  JOIN Tables t ON b.table_id=t.table_id
+                 JOIN Users u ON b.user_id=u.user_id
                  WHERE t.restaurant_id=? AND b.booking_date=?
                  ORDER BY b.booking_time"""
         with self._get_connection() as conn:
@@ -248,11 +249,12 @@ class DatabaseDAO:
                             booking_time=r.booking_time, status=r.status,
                             note=r.note, discount_percent=r.discount_percent, booking_code=r.booking_code,
                             table_number=r.table_number,
-                            table_area=r.area) for r in rows]
+                            table_area=r.area, user_name=r.user_name) for r in rows]
 
     def get_all_bookings(self, restaurant_id):
-        sql = """SELECT b.*, t.table_number, t.area FROM Booking b
+        sql = """SELECT b.*, t.table_number, t.area, u.full_name as user_name FROM Booking b
                  JOIN Tables t ON b.table_id=t.table_id
+                 JOIN Users u ON b.user_id=u.user_id
                  WHERE t.restaurant_id=?
                  ORDER BY b.booking_date DESC, b.booking_time DESC"""
         with self._get_connection() as conn:
@@ -263,7 +265,7 @@ class DatabaseDAO:
                             booking_time=r.booking_time, status=r.status,
                             note=r.note, discount_percent=r.discount_percent, booking_code=r.booking_code,
                             table_number=r.table_number,
-                            table_area=r.area) for r in rows]
+                            table_area=r.area, user_name=r.user_name) for r in rows]
 
     def update_booking(self, booking: Booking):
         sql = """UPDATE Booking SET guest_name=?, guest_phone=?, guest_count=?, 
@@ -279,8 +281,9 @@ class DatabaseDAO:
     def get_booking_by_table(self, table_id, target_date=None):
         if not target_date:
             target_date = date.today()
-        sql = """SELECT TOP 1 b.*, t.table_number, t.area FROM Booking b
+        sql = """SELECT TOP 1 b.*, t.table_number, t.area, u.full_name as user_name FROM Booking b
                  JOIN Tables t ON b.table_id=t.table_id
+                 JOIN Users u ON b.user_id=u.user_id
                  WHERE b.table_id=? AND b.booking_date=? AND b.status IN ('confirmed', 'completed')
                  ORDER BY b.booking_time DESC"""
         with self._get_connection() as conn:
@@ -291,7 +294,7 @@ class DatabaseDAO:
                                guest_count=r.guest_count, booking_date=r.booking_date,
                                booking_time=r.booking_time, status=r.status,
                                note=r.note, discount_percent=r.discount_percent, booking_code=r.booking_code,
-                               table_number=r.table_number, table_area=r.area)
+                               table_number=r.table_number, table_area=r.area, user_name=r.user_name)
         return None
 
     def cancel_booking(self, booking_id):
@@ -465,7 +468,7 @@ class DatabaseDAO:
     def create_bill(self, bill: Bill, order_ids: list):
         """
         Tạo hóa đơn: tính tổng tiền từ các order, áp giảm giá, thuế.
-        Luồng: Tìm order -> Tính subtotal -> Áp giảm giá -> Tính thuế -> Lưu.
+        Luồng: Tìm order -> Tính subtotal -> Áp giảm giá -> Tính thuế -> Lưu Bill -> Gắn bill_id vào Orders.
         """
         with self._get_connection() as conn:
             # Bước 1: Tính subtotal từ các món trong các order
@@ -494,9 +497,9 @@ class DatabaseDAO:
                 tax_amt, total, bill.payment_method, bill.note)
             bill_id = cursor.fetchone()[0]
 
-            # Bước 5: Liên kết bill với các order
+            # Bước 5: Gắn bill_id vào các order (thay thế BillOrder)
             for oid in order_ids:
-                conn.execute("INSERT INTO BillOrder(bill_id,order_id) VALUES(?,?)", bill_id, oid)
+                conn.execute("UPDATE Orders SET bill_id=? WHERE order_id=?", bill_id, oid)
 
             conn.commit()
             bill.bill_id = bill_id
@@ -515,10 +518,9 @@ class DatabaseDAO:
             # Lấy table_id và hoàn tất các order
             row = conn.execute("SELECT table_id FROM Bill WHERE bill_id=?", bill_id).fetchone()
             if row:
-                # Đánh dấu các order liên quan là completed
+                # Đánh dấu các order thuộc bill này là completed
                 conn.execute(
-                    """UPDATE Orders SET status='completed' WHERE order_id IN
-                       (SELECT order_id FROM BillOrder WHERE bill_id=?)""", bill_id)
+                    "UPDATE Orders SET status='completed' WHERE bill_id=?", bill_id)
                 # Kiểm tra bàn còn order active không
                 remaining = conn.execute(
                     "SELECT COUNT(*) FROM Orders WHERE table_id=? AND status='active'",
@@ -568,8 +570,8 @@ class DatabaseDAO:
 
             # 4. Cập nhật DishStat
             sql_dishes = """SELECT od.dish_id, SUM(od.quantity) as qty, SUM(od.quantity * od.unit_price) as rev
-                            FROM OrderedDish od JOIN BillOrder bo ON od.order_id = bo.order_id
-                            WHERE bo.bill_id=? GROUP BY od.dish_id"""
+                            FROM OrderedDish od JOIN Orders o ON od.order_id = o.order_id
+                            WHERE o.bill_id=? GROUP BY od.dish_id"""
             dishes = conn.execute(sql_dishes, bill_id).fetchall()
             for d in dishes:
                 exist_d = conn.execute("SELECT stat_id FROM DishStat WHERE dish_id=? AND day=?", d.dish_id, pay_date).fetchone()

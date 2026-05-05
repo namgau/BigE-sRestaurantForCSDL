@@ -28,14 +28,13 @@ class Restaurant:
 class User:
     """
     Thực thể Người dùng - đại diện cho nhân viên nhà hàng.
-    Roles: manager, receptionist, waiter, chef
+    Positions: manager, receptionist, waiter, chef
     """
     user_id: int = 0
-    restaurant_id: int = 0
     username: str = ""
     password_hash: str = ""
     full_name: str = ""
-    role: str = ""          # manager | receptionist | waiter | chef
+    position: str = ""      # manager | receptionist | waiter | chef
     phone: str = ""
     is_active: bool = True
     created_at: Optional[datetime] = None
@@ -115,15 +114,17 @@ class Booking:
     # Trường phụ trợ
     table_number: int = 0
     table_area: str = ""
+    user_name: str = ""     # Tên nhân viên lễ tân tạo đặt bàn
 
 
 @dataclass
 class Order:
     """
-    Thực thể Phiếu gọi món (gắn với bàn).
+    Thực thể Phiếu gọi món (gắn với bàn, thuộc về 1 Bill).
     Status: active | completed | cancelled
     """
     order_id: int = 0
+    bill_id: Optional[int] = None   # FK tới Bill (NULL khi chưa tạo hóa đơn)
     table_id: int = 0
     user_id: int = 0
     order_time: Optional[datetime] = None
@@ -157,7 +158,7 @@ class OrderedDish:
 @dataclass
 class Bill:
     """
-    Thực thể Hóa đơn thanh toán.
+    Thực thể Hóa đơn thanh toán (cha của nhiều Order).
     Status: unpaid | paid | cancelled
     payment_method: cash | card | transfer | e_wallet
     """
@@ -179,14 +180,6 @@ class Bill:
     # Trường phụ trợ
     table_number: int = 0
     cashier_name: str = ""
-    order_ids: List[int] = field(default_factory=list)
-
-
-@dataclass
-class BillOrder:
-    """Thực thể liên kết hóa đơn - phiếu gọi món (hỗ trợ tách/gộp hóa đơn)."""
-    bill_id: int = 0
-    order_id: int = 0
 
 
 @dataclass

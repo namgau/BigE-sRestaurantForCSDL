@@ -30,17 +30,14 @@ GO
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Users' AND xtype='U')
 CREATE TABLE Users (
     user_id         INT IDENTITY(1,1) PRIMARY KEY,
-    restaurant_id   INT             NOT NULL,
     username        VARCHAR(50)     NOT NULL UNIQUE,
     password_hash   VARCHAR(255)    NOT NULL,
     full_name       NVARCHAR(100)   NOT NULL,
-    role            VARCHAR(20)     NOT NULL 
-                    CHECK (role IN ('manager','receptionist','waiter','chef')),
+    position        VARCHAR(20)     NOT NULL 
+                    CHECK (position IN ('manager','receptionist','waiter','chef')),
     phone           VARCHAR(20)     NULL,
     is_active       BIT             DEFAULT 1,
-    created_at      DATETIME        DEFAULT GETDATE(),
-    CONSTRAINT FK_Users_Restaurant FOREIGN KEY (restaurant_id) 
-        REFERENCES Restaurant(restaurant_id)
+    created_at      DATETIME        DEFAULT GETDATE()
 );
 GO
 
@@ -140,47 +137,7 @@ CREATE TABLE Booking (
 GO
 
 -- ============================================================
--- 8. BẢNG ORDER - Phiếu gọi món (gắn với bàn)
--- ============================================================
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Orders' AND xtype='U')
-CREATE TABLE Orders (
-    order_id        INT IDENTITY(1,1) PRIMARY KEY,
-    table_id        INT             NOT NULL,
-    user_id         INT             NOT NULL,       -- Nhân viên phục vụ tạo
-    order_time      DATETIME        DEFAULT GETDATE(),
-    status          VARCHAR(20)     DEFAULT 'active'
-                    CHECK (status IN ('active','completed','cancelled')),
-    note            NVARCHAR(500)   NULL,
-    CONSTRAINT FK_Order_Table FOREIGN KEY (table_id) 
-        REFERENCES Tables(table_id),
-    CONSTRAINT FK_Order_User FOREIGN KEY (user_id) 
-        REFERENCES Users(user_id)
-);
-GO
-
--- ============================================================
--- 9. BẢNG ORDERED_DISH - Chi tiết món đã gọi
--- ============================================================
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='OrderedDish' AND xtype='U')
-CREATE TABLE OrderedDish (
-    ordered_dish_id INT IDENTITY(1,1) PRIMARY KEY,
-    order_id        INT             NOT NULL,
-    dish_id         INT             NOT NULL,
-    quantity        INT             NOT NULL DEFAULT 1 CHECK (quantity > 0),
-    unit_price      DECIMAL(12,2)   NOT NULL,       -- Giá tại thời điểm gọi
-    note            NVARCHAR(200)   NULL,            -- Ghi chú: ít cay, không hành...
-    cook_status     VARCHAR(20)     DEFAULT 'pending'
-                    CHECK (cook_status IN ('pending','cooking','done','cancelled')),
-    created_at      DATETIME        DEFAULT GETDATE(),
-    CONSTRAINT FK_OD_Order FOREIGN KEY (order_id) 
-        REFERENCES Orders(order_id),
-    CONSTRAINT FK_OD_Dish FOREIGN KEY (dish_id) 
-        REFERENCES Dish(dish_id)
-);
-GO
-
--- ============================================================
--- 10. BẢNG BILL - Hóa đơn thanh toán
+-- 8. BẢNG BILL - Hóa đơn thanh toán (tạo trước Orders vì Orders.bill_id FK tới Bill)
 -- ============================================================
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Bill' AND xtype='U')
 CREATE TABLE Bill (
@@ -211,17 +168,45 @@ CREATE TABLE Bill (
 GO
 
 -- ============================================================
--- 11. BẢNG BILL_ORDER - Liên kết hóa đơn với các order (hỗ trợ gộp/tách)
+-- 9. BẢNG ORDER - Phiếu gọi món (gắn với bàn, thuộc về 1 Bill)
 -- ============================================================
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='BillOrder' AND xtype='U')
-CREATE TABLE BillOrder (
-    bill_id         INT             NOT NULL,
-    order_id        INT             NOT NULL,
-    PRIMARY KEY (bill_id, order_id),
-    CONSTRAINT FK_BO_Bill FOREIGN KEY (bill_id) 
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Orders' AND xtype='U')
+CREATE TABLE Orders (
+    order_id        INT IDENTITY(1,1) PRIMARY KEY,
+    bill_id         INT             NULL,           -- FK tới Bill (NULL khi chưa thanh toán)
+    table_id        INT             NOT NULL,
+    user_id         INT             NOT NULL,       -- Nhân viên phục vụ tạo
+    order_time      DATETIME        DEFAULT GETDATE(),
+    status          VARCHAR(20)     DEFAULT 'active'
+                    CHECK (status IN ('active','completed','cancelled')),
+    note            NVARCHAR(500)   NULL,
+    CONSTRAINT FK_Order_Bill FOREIGN KEY (bill_id)
         REFERENCES Bill(bill_id),
-    CONSTRAINT FK_BO_Order FOREIGN KEY (order_id) 
-        REFERENCES Orders(order_id)
+    CONSTRAINT FK_Order_Table FOREIGN KEY (table_id) 
+        REFERENCES Tables(table_id),
+    CONSTRAINT FK_Order_User FOREIGN KEY (user_id) 
+        REFERENCES Users(user_id)
+);
+GO
+
+-- ============================================================
+-- 10. BẢNG ORDERED_DISH - Chi tiết món đã gọi
+-- ============================================================
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='OrderedDish' AND xtype='U')
+CREATE TABLE OrderedDish (
+    ordered_dish_id INT IDENTITY(1,1) PRIMARY KEY,
+    order_id        INT             NOT NULL,
+    dish_id         INT             NOT NULL,
+    quantity        INT             NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    unit_price      DECIMAL(12,2)   NOT NULL,       -- Giá tại thời điểm gọi
+    note            NVARCHAR(200)   NULL,            -- Ghi chú: ít cay, không hành...
+    cook_status     VARCHAR(20)     DEFAULT 'pending'
+                    CHECK (cook_status IN ('pending','cooking','done','cancelled')),
+    created_at      DATETIME        DEFAULT GETDATE(),
+    CONSTRAINT FK_OD_Order FOREIGN KEY (order_id) 
+        REFERENCES Orders(order_id),
+    CONSTRAINT FK_OD_Dish FOREIGN KEY (dish_id) 
+        REFERENCES Dish(dish_id)
 );
 GO
 
@@ -239,12 +224,12 @@ GO
 
 -- Người dùng mẫu (password: 123456 -> hash đơn giản cho demo)
 SET IDENTITY_INSERT Users ON;
-INSERT INTO Users (user_id, restaurant_id, username, password_hash, full_name, role, phone) VALUES
-(1, 1, 'admin',     'e10adc3949ba59abbe56e057f20f883e', N'Nguyễn Văn Quản Lý',   'manager',      '0900000001'),
-(2, 1, 'letan01',   'e10adc3949ba59abbe56e057f20f883e', N'Trần Thị Lễ Tân',      'receptionist', '0900000002'),
-(3, 1, 'waiter01',  'e10adc3949ba59abbe56e057f20f883e', N'Lê Văn Phục Vụ',       'waiter',       '0900000003'),
-(4, 1, 'chef01',    'e10adc3949ba59abbe56e057f20f883e', N'Phạm Văn Bếp Trưởng',  'chef',         '0900000004'),
-(5, 1, 'cashier01', 'e10adc3949ba59abbe56e057f20f883e', N'Hoàng Thị Thu Ngân',   'receptionist',      '0900000005');
+INSERT INTO Users (user_id, username, password_hash, full_name, position, phone) VALUES
+(1, 'admin',     'e10adc3949ba59abbe56e057f20f883e', N'Nguyễn Văn Quản Lý',   'manager',      '0900000001'),
+(2, 'letan01',   'e10adc3949ba59abbe56e057f20f883e', N'Trần Thị Lễ Tân',      'receptionist', '0900000002'),
+(3, 'waiter01',  'e10adc3949ba59abbe56e057f20f883e', N'Lê Văn Phục Vụ',       'waiter',       '0900000003'),
+(4, 'chef01',    'e10adc3949ba59abbe56e057f20f883e', N'Phạm Văn Bếp Trưởng',  'chef',         '0900000004'),
+(5, 'cashier01', 'e10adc3949ba59abbe56e057f20f883e', N'Hoàng Thị Thu Ngân',   'receptionist',      '0900000005');
 SET IDENTITY_INSERT Users OFF;
 GO
 

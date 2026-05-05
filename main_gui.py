@@ -38,7 +38,7 @@ class MainWindow(QMainWindow):
     def _role_vn(self):
         m = {'manager':'Quản lý','receptionist':'Lễ tân','waiter':'Phục vụ',
              'chef':'Bếp'}
-        return m.get(self.user.role, self.user.role)
+        return m.get(self.user.position, self.user.position)
 
     def setup_ui(self):
         central = QWidget()
@@ -114,7 +114,7 @@ class MainWindow(QMainWindow):
     def _get_pages_for_role(self):
         """Trả về danh sách trang theo vai trò người dùng."""
         pages = []
-        role = self.user.role
+        role = self.user.position
 
         # Lễ tân và Quản lý có tab Đặt bàn chuẩn (Booking Workflow)
         if role in ('receptionist', 'manager'):
@@ -172,7 +172,7 @@ class MainWindow(QMainWindow):
                 f"Bàn đang được sử dụng.\nChuyển sang tab Gọi món hoặc Thanh toán để thao tác.")
         elif table.status == 'reserved':
             # Lễ tân hoặc Quản lý có thể mở khóa bàn đã đặt khi khách đến
-            if self.user.role in ('receptionist', 'manager'):
+            if self.user.position in ('receptionist', 'manager'):
                 reply = QMessageBox.question(self, f"Bàn {table.table_number} - Đã đặt",
                     f"Bàn {table.table_number} đã được đặt trước.\n\n"
                     f"Khách đã đến? Mở khóa bàn để phục vụ?",

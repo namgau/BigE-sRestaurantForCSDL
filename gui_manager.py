@@ -204,7 +204,7 @@ class ManagerWidget(QWidget):
         w = QWidget()
         layout = QVBoxLayout(w)
         self.tbl_staff = QTableWidget(0, 6)
-        self.tbl_staff.setHorizontalHeaderLabels(["ID", "Họ tên", "Username", "Vai trò", "SĐT", "Thao tác"])
+        self.tbl_staff.setHorizontalHeaderLabels(["ID", "Họ tên", "Username", "Chức vụ", "SĐT", "Thao tác"])
         self.tbl_staff.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.tbl_staff.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         self.tbl_staff.setColumnWidth(5, 140)
@@ -216,14 +216,14 @@ class ManagerWidget(QWidget):
         self.txt_staff_name.setStyleSheet(self._input_style())
         self.txt_staff_user = QLineEdit(); self.txt_staff_user.setPlaceholderText("Username")
         self.txt_staff_user.setStyleSheet(self._input_style())
-        self.cmb_role = QComboBox()
-        self.cmb_role.addItems(["manager","receptionist","waiter","chef"])
-        self.cmb_role.setStyleSheet(self._input_style())
+        self.cmb_position = QComboBox()
+        self.cmb_position.addItems(["manager","receptionist","waiter","chef"])
+        self.cmb_position.setStyleSheet(self._input_style())
         self.txt_staff_phone = QLineEdit(); self.txt_staff_phone.setPlaceholderText("SĐT")
         self.txt_staff_phone.setStyleSheet(self._input_style())
         form.addWidget(self.txt_staff_name)
         form.addWidget(self.txt_staff_user)
-        form.addWidget(self.cmb_role)
+        form.addWidget(self.cmb_position)
         form.addWidget(self.txt_staff_phone)
 
         btn_add = QPushButton("Thêm")
@@ -240,14 +240,14 @@ class ManagerWidget(QWidget):
         return w
 
     def load_staff(self):
-        users = self.dao.get_all_users(self.rid)
+        users = self.dao.get_all_users()
         self.tbl_staff.setRowCount(len(users))
-        role_vn = {'manager':'Quản lý','receptionist':'Lễ tân','waiter':'Phục vụ','chef':'Bếp'}
+        pos_vn = {'manager':'Quản lý','receptionist':'Lễ tân','waiter':'Phục vụ','chef':'Bếp'}
         for i, u in enumerate(users):
             self.tbl_staff.setItem(i, 0, self._read_only_item(str(u.user_id)))
             self.tbl_staff.setItem(i, 1, self._read_only_item(u.full_name))
             self.tbl_staff.setItem(i, 2, self._read_only_item(u.username))
-            self.tbl_staff.setItem(i, 3, self._read_only_item(role_vn.get(u.role, u.role)))
+            self.tbl_staff.setItem(i, 3, self._read_only_item(pos_vn.get(u.position, u.position)))
             self.tbl_staff.setItem(i, 4, self._read_only_item(u.phone))
 
             actions = QWidget()
@@ -272,8 +272,8 @@ class ManagerWidget(QWidget):
         uname = self.txt_staff_user.text().strip()
         if not name or not uname:
             QMessageBox.warning(self, "Lỗi", "Nhập đầy đủ thông tin!"); return
-        user = User(restaurant_id=self.rid, username=uname, full_name=name,
-                    role=self.cmb_role.currentText(), phone=self.txt_staff_phone.text().strip())
+        user = User(username=uname, full_name=name,
+                    position=self.cmb_position.currentText(), phone=self.txt_staff_phone.text().strip())
         try:
             self.dao.add_user(user)
             self.load_staff()
@@ -290,17 +290,17 @@ class ManagerWidget(QWidget):
         txt_name = QLineEdit(user.full_name)
         txt_name.setStyleSheet(self._input_style())
         
-        cmb_role = QComboBox()
-        cmb_role.setStyleSheet(self._input_style())
-        cmb_role.addItems(["manager","receptionist","waiter","chef"])
-        cmb_role.setCurrentText(user.role)
+        cmb_pos = QComboBox()
+        cmb_pos.setStyleSheet(self._input_style())
+        cmb_pos.addItems(["manager","receptionist","waiter","chef"])
+        cmb_pos.setCurrentText(user.position)
         
         txt_phone = QLineEdit(user.phone or "")
         txt_phone.setStyleSheet(self._input_style())
         
         layout.addRow("Username:", QLabel(user.username))
         layout.addRow("Họ tên:", txt_name)
-        layout.addRow("Vai trò:", cmb_role)
+        layout.addRow("Chức vụ:", cmb_pos)
         layout.addRow("SĐT:", txt_phone)
         
         btn_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
@@ -318,7 +318,7 @@ class ManagerWidget(QWidget):
                 QMessageBox.warning(self, "Lỗi", "Họ tên không được để trống!")
                 return
             user.full_name = new_name
-            user.role = cmb_role.currentText()
+            user.position = cmb_pos.currentText()
             user.phone = txt_phone.text().strip()
             try:
                 self.dao.update_user(user)
