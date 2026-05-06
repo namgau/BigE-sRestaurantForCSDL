@@ -15,7 +15,7 @@
 
 SQL_SERVER_CONFIG = {
     'DRIVER': '{ODBC Driver 17 for SQL Server}',
-    'SERVER': r'localhost',
+    'SERVER': r'localhost\CLCCSDLPTNHOM4',
     'DATABASE': 'RestaurantDB',                       # Tên database 
     'UID': '',                                   # Để trống nếu dùng Windows Auth
     'PWD': '',                                   # Để trống nếu dùng Windows Auth

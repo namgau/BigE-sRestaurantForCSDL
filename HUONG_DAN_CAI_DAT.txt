@@ -1,7 +1,3 @@
-HỆ THỐNG QUẢN LÝ NHÀ HÀNG EPSTEIN'S
-
-
-
 Bước 1: Mở Terminal (CMD hoặc PowerShell), di chuyển vào thư mục dự án:
 
     cd "đường dẫn"
@@ -34,6 +30,27 @@ Mở file app_config.py và chỉnh sửa:
 - DATABASE: 'RestaurantDB'
 - Nếu dùng Windows Auth: giữ TRUSTED_CONNECTION = 'yes'
 - Nếu dùng SQL Auth: đặt TRUSTED_CONNECTION = 'no', điền UID và PWD
+
+KHỞI TẠO DATABASE (CHẠY MỘT LẦN DUY NHẤT)
+-------------------------------------------------
+Sau khi cấu hình app_config.py, chạy lệnh sau để tự động tạo
+toàn bộ database (bảng, dữ liệu mẫu, trigger, stored procedure):
+
+    python setup_database.py
+
+Output thành công sẽ hiển thị:
+    [✓] Kết nối SQL Server thành công!
+    [✓] Hoàn tất! Đã thực thi X batch thành công.
+    [✓] Database 'RestaurantDB' đã sẵn sàng:
+        • 15 bảng: Bill, Booking, Category, ...
+        • 3 trigger: trg_Bill_AutoSetPaidAt, ...
+        • 3 stored procedure: sp_CancelBooking, ...
+
+Lưu ý:
+    - Script này an toàn khi chạy nhiều lần (không xóa dữ liệu cũ).
+    - Nếu lỗi kết nối: kiểm tra SQL Server có đang chạy không
+      và SERVER trong app_config.py có đúng không.
+
 
 
 VI. CHẠY ỨNG DỤNG
