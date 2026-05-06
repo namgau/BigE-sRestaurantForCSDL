@@ -12,15 +12,15 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QIcon
 
 from app_config import APP_CONFIG
-from database_dao import DatabaseDAO
-from redis_cache import RedisCache
-from gui_login import LoginWindow
-from gui_tables import TableMapWidget, BookingDialog
-from gui_order import OrderWidget
-from gui_kitchen import KitchenWidget
-from gui_billing import BillingWidget
-from gui_manager import ManagerWidget, ReportWidget
-from gui_booking import BookingWidget
+from database.database_dao import DatabaseDAO
+from cache.redis_cache import RedisCache
+from gui.gui_login import LoginWindow
+from gui.gui_tables import TableMapWidget, BookingDialog
+from gui.gui_order import OrderWidget
+from gui.gui_kitchen import KitchenWidget
+from gui.gui_billing import BillingWidget
+from gui.gui_manager import ManagerWidget, ReportWidget
+from gui.gui_booking import BookingWidget
 
 
 class MainWindow(QMainWindow):

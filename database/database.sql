@@ -435,3 +435,232 @@ CREATE TABLE IncomeStat (
     CONSTRAINT FK_IncStat_Bill FOREIGN KEY (bill_id) REFERENCES Bill(bill_id)
 );
 GO
+
+
+-- ============================================================
+-- TRIGGERS
+-- ============================================================
+
+-- Trigger 1: Kiểm tra số khách không vượt sức chứa bàn
+-- Tự động rollback nếu guest_count > capacity
+-- ============================================================
+IF OBJECT_ID('trg_Booking_CheckCapacity', 'TR') IS NOT NULL
+    DROP TRIGGER trg_Booking_CheckCapacity;
+GO
+
+CREATE TRIGGER trg_Booking_CheckCapacity
+ON Booking
+AFTER INSERT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1 FROM inserted i
+        JOIN Tables t ON i.table_id = t.table_id
+        WHERE i.guest_count > t.capacity
+    )
+    BEGIN
+        RAISERROR(N'Số khách vượt quá sức chứa của bàn.', 16, 1);
+        ROLLBACK TRANSACTION;
+    END
+END;
+GO
+
+-- Trigger 2: Tự động ghi thời gian thanh toán (paid_at)
+-- Khi bill.status chuyển sang 'paid' mà paid_at chưa được set
+-- ============================================================
+IF OBJECT_ID('trg_Bill_AutoSetPaidAt', 'TR') IS NOT NULL
+    DROP TRIGGER trg_Bill_AutoSetPaidAt;
+GO
+
+CREATE TRIGGER trg_Bill_AutoSetPaidAt
+ON Bill
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE Bill
+    SET paid_at = GETDATE()
+    FROM Bill b
+    JOIN inserted i ON b.bill_id = i.bill_id
+    JOIN deleted  d ON b.bill_id = d.bill_id
+    WHERE i.status = 'paid'
+      AND d.status <> 'paid'
+      AND b.paid_at IS NULL;
+END;
+GO
+
+-- Trigger 3: Bảo vệ tài khoản admin khỏi bị vô hiệu hóa
+-- ============================================================
+IF OBJECT_ID('trg_Users_ProtectAdmin', 'TR') IS NOT NULL
+    DROP TRIGGER trg_Users_ProtectAdmin;
+GO
+
+CREATE TRIGGER trg_Users_ProtectAdmin
+ON Users
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1 FROM inserted i
+        JOIN deleted d ON i.user_id = d.user_id
+        WHERE i.username = 'admin'
+          AND i.is_active = 0
+          AND d.is_active = 1
+    )
+    BEGIN
+        RAISERROR(N'Không thể vô hiệu hóa tài khoản admin.', 16, 1);
+        ROLLBACK TRANSACTION;
+    END
+END;
+GO
+
+
+-- ============================================================
+-- STORED PROCEDURES
+-- ============================================================
+
+-- SP 1: Tạo booking với validation và transaction đầy đủ
+-- Trả về booking_id vừa tạo qua SELECT
+-- ============================================================
+IF OBJECT_ID('sp_CreateBooking', 'P') IS NOT NULL
+    DROP PROCEDURE sp_CreateBooking;
+GO
+
+CREATE PROCEDURE sp_CreateBooking
+    @table_id         INT,
+    @client_id        INT           = NULL,
+    @user_id          INT,
+    @guest_name       NVARCHAR(100),
+    @guest_phone      VARCHAR(20)   = NULL,
+    @guest_count      INT,
+    @booking_date     DATE,
+    @booking_time     TIME,
+    @note             NVARCHAR(500) = NULL,
+    @discount_percent DECIMAL(5,2)  = 0,
+    @booking_code     VARCHAR(20)   = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        -- Kiểm tra bàn đã có booking vào ngày đó chưa
+        IF EXISTS (
+            SELECT 1 FROM Booking
+            WHERE table_id    = @table_id
+              AND booking_date = @booking_date
+              AND status       = 'confirmed'
+        )
+        BEGIN
+            RAISERROR(N'Bàn đã có khách đặt vào ngày này.', 16, 1);
+        END
+
+        INSERT INTO Booking
+            (table_id, client_id, user_id, guest_name, guest_phone,
+             guest_count, booking_date, booking_time, note,
+             discount_percent, booking_code)
+        VALUES
+            (@table_id, @client_id, @user_id, @guest_name, @guest_phone,
+             @guest_count, @booking_date, @booking_time, @note,
+             @discount_percent, @booking_code);
+
+        UPDATE Tables SET status = 'reserved' WHERE table_id = @table_id;
+
+        SELECT SCOPE_IDENTITY() AS booking_id;   -- Python đọc kết quả này
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+
+-- SP 2: Hủy booking và giải phóng bàn nếu không còn booking nào
+-- ============================================================
+IF OBJECT_ID('sp_CancelBooking', 'P') IS NOT NULL
+    DROP PROCEDURE sp_CancelBooking;
+GO
+
+CREATE PROCEDURE sp_CancelBooking
+    @booking_id INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        DECLARE @table_id INT;
+        SELECT @table_id = table_id FROM Booking WHERE booking_id = @booking_id;
+
+        IF @table_id IS NULL
+        BEGIN
+            RAISERROR(N'Booking không tồn tại.', 16, 1);
+        END
+
+        UPDATE Booking SET status = 'cancelled' WHERE booking_id = @booking_id;
+
+        -- Chỉ giải phóng bàn nếu không còn booking 'confirmed' nào khác
+        IF NOT EXISTS (
+            SELECT 1 FROM Booking
+            WHERE table_id = @table_id AND status = 'confirmed'
+        )
+        BEGIN
+            UPDATE Tables SET status = 'available' WHERE table_id = @table_id;
+        END
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+
+-- SP 3: Thanh toán hóa đơn — cập nhật Bill, Orders, Tables trong 1 transaction
+-- ============================================================
+IF OBJECT_ID('sp_PayBill', 'P') IS NOT NULL
+    DROP PROCEDURE sp_PayBill;
+GO
+
+CREATE PROCEDURE sp_PayBill
+    @bill_id        INT,
+    @payment_method VARCHAR(20) = 'cash'
+AS
+BEGIN
+    SET NOCOUNT ON;
+    BEGIN TRANSACTION;
+    BEGIN TRY
+        DECLARE @table_id INT;
+
+        UPDATE Bill
+        SET status = 'paid', payment_method = @payment_method, paid_at = GETDATE()
+        WHERE bill_id = @bill_id;
+
+        SELECT @table_id = table_id FROM Bill WHERE bill_id = @bill_id;
+
+        UPDATE Orders SET status = 'completed' WHERE bill_id = @bill_id;
+
+        -- Giải phóng bàn nếu không còn order active
+        IF NOT EXISTS (
+            SELECT 1 FROM Orders
+            WHERE table_id = @table_id AND status = 'active'
+        )
+        BEGIN
+            UPDATE Tables SET status = 'available' WHERE table_id = @table_id;
+        END
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+        THROW;
+    END CATCH
+END;
+GO
+
+PRINT N'=== Database RestaurantDB setup hoàn tất (bao gồm Triggers & Stored Procedures)! ===';
+GO
