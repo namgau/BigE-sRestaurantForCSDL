@@ -4,7 +4,7 @@ HỆ THỐNG QUẢN LÝ NHÀ HÀNG EPSTEIN'S
 
 Bước 1: Mở Terminal (CMD hoặc PowerShell), di chuyển vào thư mục dự án:
 
-    cd "cd /d C:\Users\Admin\OneDrive\Desktop\AppRestaurantManagement"
+    cd "đường dẫn"
 
 Bước 2: Tạo Virtual Environment (đã tạo sẵn thư mục venv):
 
