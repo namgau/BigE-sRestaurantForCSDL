@@ -100,7 +100,7 @@ IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Client' AND xtype='U')
 CREATE TABLE Client (
     client_id       INT IDENTITY(1,1) PRIMARY KEY,
     full_name       NVARCHAR(100)   NOT NULL,
-    phone           VARCHAR(20)     NULL UNIQUE,
+    phone           VARCHAR(20)     NULL,
     email           VARCHAR(100)    NULL,
     loyalty_points  INT             DEFAULT 0,
     created_at      DATETIME        DEFAULT GETDATE()
@@ -434,4 +434,134 @@ CREATE TABLE IncomeStat (
     revenue         DECIMAL(14,2)   DEFAULT 0,
     CONSTRAINT FK_IncStat_Bill FOREIGN KEY (bill_id) REFERENCES Bill(bill_id)
 );
+GO
+
+-- ============================================================
+-- 13. PROCEDURE: Lấy báo cáo doanh thu theo ngày
+-- ============================================================
+GO
+CREATE PROCEDURE sp_GetDailyRevenueSummary
+    @QueryDate DATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Lấy tổng doanh thu và số lượng hóa đơn
+    SELECT 
+        COUNT(bill_id) AS TotalBills,
+        ISNULL(SUM(total_amount), 0) AS TotalRevenue,
+        ISNULL(SUM(discount_amount), 0) AS TotalDiscount
+    FROM Bill
+    WHERE CAST(paid_at AS DATE) = @QueryDate 
+      AND status = 'paid';
+
+    -- Lấy danh sách các món ăn bán chạy trong ngày
+    SELECT 
+        d.name AS DishName,
+        SUM(od.quantity) AS TotalQuantitySold,
+        SUM(od.quantity * od.unit_price) AS TotalDishRevenue
+    FROM Bill b
+    JOIN Orders o ON b.bill_id = o.bill_id
+    JOIN OrderedDish od ON o.order_id = od.order_id
+    JOIN Dish d ON od.dish_id = d.dish_id
+    WHERE CAST(b.paid_at AS DATE) = @QueryDate 
+      AND b.status = 'paid'
+    GROUP BY d.name
+    ORDER BY TotalQuantitySold DESC;
+END;
+GO
+
+-- ============================================================
+-- 14. TRIGGER: Ghi log khi trạng thái hóa đơn (Bill) thay đổi
+-- ============================================================
+-- Tạo bảng Audit_BillLog trước để lưu trữ lịch sử
+IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Audit_BillLog' AND xtype='U')
+CREATE TABLE Audit_BillLog (
+    log_id INT IDENTITY(1,1) PRIMARY KEY,
+    bill_id INT,
+    old_status VARCHAR(20),
+    new_status VARCHAR(20),
+    changed_at DATETIME DEFAULT GETDATE(),
+    changed_by NVARCHAR(100) DEFAULT SYSTEM_USER
+);
+GO
+
+CREATE TRIGGER trg_AuditBillStatusChanges
+ON Bill
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Kiểm tra nếu cột status có sự thay đổi
+    IF UPDATE(status)
+    BEGIN
+        INSERT INTO Audit_BillLog (bill_id, old_status, new_status)
+        SELECT 
+            i.bill_id,
+            d.status AS old_status,
+            i.status AS new_status
+        FROM inserted i
+        JOIN deleted d ON i.bill_id = d.bill_id
+        WHERE i.status <> d.status; -- Chỉ ghi log nếu trạng thái thực sự khác biệt
+    END
+END;
+GO
+
+-- ============================================================
+-- 15. TRANSACTION: Xóa/Hủy một đặt bàn (Booking) an toàn
+-- ============================================================
+GO
+CREATE PROCEDURE sp_CancelBookingTransaction
+    @BookingID INT,
+    @UserID INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        DECLARE @TableID INT;
+        DECLARE @CurrentStatus VARCHAR(20);
+
+        -- Lấy thông tin Booking
+        SELECT @TableID = table_id, @CurrentStatus = status 
+        FROM Booking 
+        WHERE booking_id = @BookingID;
+
+        -- Kiểm tra nếu Booking tồn tại và chưa bị hủy
+        IF @CurrentStatus = 'confirmed'
+        BEGIN
+            -- 1. Cập nhật trạng thái Booking thành 'cancelled'
+            UPDATE Booking
+            SET status = 'cancelled',
+                note = ISNULL(note, '') + N' (Đã hủy bởi UserID: ' + CAST(@UserID AS NVARCHAR) + ')'
+            WHERE booking_id = @BookingID;
+
+            -- 2. Giải phóng Bàn (cập nhật status thành 'available')
+            UPDATE Tables
+            SET status = 'available'
+            WHERE table_id = @TableID AND status = 'reserved';
+        END
+        ELSE
+        BEGIN
+            -- Nếu đã hủy hoặc trạng thái khác, ném lỗi để rollback
+            THROW 50000, N'Booking không ở trạng thái có thể hủy.', 1;
+        END
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        -- Nếu có bất kỳ lỗi nào xảy ra trong quá trình thực thi, hoàn tác tất cả
+        IF @@TRANCOUNT > 0
+        BEGIN
+            ROLLBACK TRANSACTION;
+        END
+
+        -- Ném lỗi ra bên ngoài
+        DECLARE @ErrorMessage NVARCHAR(4000) = ERROR_MESSAGE();
+        RAISERROR (@ErrorMessage, 16, 1);
+    END CATCH
+END;
 GO

@@ -212,3 +212,11 @@ class HourlyStat:
     guest_count: int = 0
     table_count: int = 0
     revenue: float = 0.0
+
+@dataclass
+class UserStat:
+    """Thực thể Thống kê hiệu suất nhân viên."""
+    user_name: str = ""
+    total_bills_processed: int = 0
+    total_revenue_processed: float = 0.0
+

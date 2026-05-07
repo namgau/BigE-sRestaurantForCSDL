@@ -420,13 +420,13 @@ class ManageBookingView(QWidget):
         title.setStyleSheet("color:#000000;")
         layout.addWidget(title)
 
-        self.outsubListBooking = QTableWidget(0, 8)
-        self.outsubListBooking.setHorizontalHeaderLabels(["ID", "Bàn", "Khách hàng", "SĐT", "Ngày", "Giờ", "Trạng thái", "Thao tác"])
+        self.outsubListBooking = QTableWidget(0, 9)
+        self.outsubListBooking.setHorizontalHeaderLabels(["ID", "Bàn", "Khách hàng", "SĐT", "Ngày", "Giờ", "Người tạo", "Trạng thái", "Thao tác"])
         self.outsubListBooking.setColumnHidden(0, True)  # Ẩn cột ID
         self.outsubListBooking.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.outsubListBooking.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self.outsubListBooking.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Fixed)
-        self.outsubListBooking.setColumnWidth(7, 160)
+        self.outsubListBooking.horizontalHeader().setSectionResizeMode(8, QHeaderView.ResizeMode.Fixed)
+        self.outsubListBooking.setColumnWidth(8, 160)
         self.outsubListBooking.setStyleSheet("""
             QTableWidget { background: #ffffff; color: #000000; gridline-color: #e8e8e8; font: 13px 'Segoe UI'; border: 1px solid #e0e0e0; border-radius: 4px; alternate-background-color: #f5f6fa; }
             QHeaderView::section { background: #f8f9fa; color: #000000; font: bold 13px 'Segoe UI'; padding: 8px 6px; border: none; border-bottom: 2px solid #e0e0e0; }
@@ -461,11 +461,12 @@ class ManageBookingView(QWidget):
             self.outsubListBooking.setItem(i, 3, self._ro_item(b.guest_phone))
             self.outsubListBooking.setItem(i, 4, self._ro_item(b.booking_date.strftime('%d/%m/%Y') if b.booking_date else ''))
             self.outsubListBooking.setItem(i, 5, self._ro_item(b.booking_time.strftime('%H:%M') if b.booking_time else ''))
+            self.outsubListBooking.setItem(i, 6, self._ro_item(b.user_name))
             
             st_item = self._ro_item(status_map.get(b.status, b.status))
             if b.status == 'confirmed': st_item.setForeground(QBrush(QColor("#2e7d32")))
             elif b.status == 'cancelled': st_item.setForeground(QBrush(QColor("#c62828")))
-            self.outsubListBooking.setItem(i, 6, st_item)
+            self.outsubListBooking.setItem(i, 7, st_item)
             
             actions = QWidget()
             al = QHBoxLayout(actions); al.setContentsMargins(2,2,2,2); al.setSpacing(4)
@@ -486,7 +487,7 @@ class ManageBookingView(QWidget):
                 btn_del_forever.clicked.connect(lambda _, bk=b: self.actionPerformed_subDeleteForever(bk))
                 al.addWidget(btn_del_forever)
                 
-            self.outsubListBooking.setCellWidget(i, 7, actions)
+            self.outsubListBooking.setCellWidget(i, 8, actions)
 
     def actionPerformed_subUpdate(self, booking):
         # Đánh dấu khách đã đến (Chuyển trạng thái booking thành completed, bàn thành occupied)

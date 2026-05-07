@@ -71,6 +71,8 @@ class BillingWidget(QWidget):
                            "QGroupBox::title{subcontrol-origin:margin;left:10px;}")
         box_layout = QVBoxLayout(box)
 
+        box_layout.addWidget(QLabel(f"Thu ngân: {self.user.full_name}", styleSheet="color:#000000;font:italic 13px 'Segoe UI';"))
+        
         self.lbl_subtotal = QLabel("Tạm tính: 0 đ")
         self.lbl_subtotal.setStyleSheet("color:#000000;font:14px 'Segoe UI';")
         box_layout.addWidget(self.lbl_subtotal)
@@ -243,6 +245,7 @@ class BillingWidget(QWidget):
 
         layout.addRow("Mã đặt bàn:", QLabel(booking.booking_code or "N/A"))
         layout.addRow("Tên khách hàng:", QLabel(booking.guest_name))
+        layout.addRow("Nhân viên nhận đặt:", QLabel(booking.user_name))
         layout.addRow("Giảm giá:", QLabel(f"{booking.discount_percent or 0.0}%"))
         layout.addRow("Ghi chú:", QLabel(booking.note or "Không có"))
 

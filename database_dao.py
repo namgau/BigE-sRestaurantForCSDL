@@ -39,7 +39,7 @@ class DatabaseDAO:
     # USERS - Quản lý nhân sự
     # ==========================================================
     def get_all_users(self):
-        sql = "SELECT * FROM Users ORDER BY user_id"
+        sql = "SELECT * FROM Users WHERE is_active=1 ORDER BY user_id"
         with self._get_connection() as conn:
             rows = conn.execute(sql).fetchall()
             return [User(user_id=r.user_id,
@@ -50,10 +50,15 @@ class DatabaseDAO:
         pwd_hash = hashlib.md5('123456'.encode()).hexdigest()
         sql = """INSERT INTO Users(username,password_hash,full_name,position,phone)
                  VALUES(?,?,?,?,?)"""
-        with self._get_connection() as conn:
-            conn.execute(sql, user.username, pwd_hash,
-                         user.full_name, user.position, user.phone)
-            conn.commit()
+        try:
+            with self._get_connection() as conn:
+                conn.execute(sql, user.username, pwd_hash,
+                             user.full_name, user.position, user.phone)
+                conn.commit()
+        except pyodbc.IntegrityError as e:
+            if 'UNIQUE KEY constraint' in str(e) and 'Users' in str(e):
+                raise ValueError(f"Tên đăng nhập '{user.username}' đã tồn tại!")
+            raise e
 
     def update_user(self, user: User):
         sql = "UPDATE Users SET full_name=?,position=?,phone=?,is_active=? WHERE user_id=?"
@@ -97,10 +102,15 @@ class DatabaseDAO:
 
     def add_table(self, table: Table):
         sql = "INSERT INTO Tables(restaurant_id,table_number,capacity,area) VALUES(?,?,?,?)"
-        with self._get_connection() as conn:
-            conn.execute(sql, table.restaurant_id, table.table_number,
-                         table.capacity, table.area)
-            conn.commit()
+        try:
+            with self._get_connection() as conn:
+                conn.execute(sql, table.restaurant_id, table.table_number,
+                             table.capacity, table.area)
+                conn.commit()
+        except pyodbc.IntegrityError as e:
+            if 'UQ_Table_Number' in str(e) or 'UNIQUE KEY constraint' in str(e):
+                raise ValueError(f"Bàn số {table.table_number} đã tồn tại!")
+            raise e
 
     def delete_table(self, table_id):
         sql = "DELETE FROM Tables WHERE table_id=?"
@@ -706,3 +716,19 @@ class DatabaseDAO:
             rows = conn.execute(sql, restaurant_id, target_date).fetchall()
             return [HourlyStat(time_frame=r.time_frame, guest_count=r.guest_count or 0, 
                                table_count=r.table_count or 0, revenue=float(r.revenue or 0)) for r in rows]
+
+    def get_user_performance_stats(self, restaurant_id, start_date, end_date):
+        sql = """SELECT u.full_name as user_name, 
+                        COUNT(b.bill_id) as total_bills,
+                        ISNULL(SUM(b.total_amount), 0) as total_revenue
+                 FROM Users u
+                 JOIN Bill b ON u.user_id = b.user_id
+                 JOIN Tables t ON b.table_id = t.table_id
+                 WHERE t.restaurant_id = ? AND CAST(b.paid_at AS DATE) BETWEEN ? AND ? AND b.status='paid'
+                 GROUP BY u.user_id, u.full_name
+                 ORDER BY total_revenue DESC"""
+        with self._get_connection() as conn:
+            from models import UserStat
+            rows = conn.execute(sql, restaurant_id, start_date, end_date).fetchall()
+            return [UserStat(user_name=r.user_name, total_bills_processed=r.total_bills or 0, 
+                             total_revenue_processed=float(r.total_revenue or 0)) for r in rows]

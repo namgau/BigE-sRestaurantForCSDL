@@ -17,10 +17,10 @@ class KitchenWidget(QWidget):
         self.queue_items = []
         self.setup_ui()
         self.load_queue()
-        # Tự động refresh mỗi 15 giây
+        # Tự động refresh mỗi 3 giây
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.load_queue)
-        self.timer.start(15000)
+        self.timer.start(3000)
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
